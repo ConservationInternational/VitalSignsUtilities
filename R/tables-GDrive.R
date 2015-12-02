@@ -1,6 +1,6 @@
 # This is a package for Conservation International's Vital Signs project.
 # The package can be found at:
-# github.com/ConservationInternational/RCode/rpackages/vitalsigns/
+# github.com/ConservationInternational/VitalSignsUtilities
 # 
 # The purpose of this package is to provide:
 # 1) Streamlined access to Vital Signs Data on Google Drive
