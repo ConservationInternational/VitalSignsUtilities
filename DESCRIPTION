@@ -1,0 +1,19 @@
+Package: VitalSignsUtilities
+Title: Interfaces Google Drive, S3 and Github for Conservation International's Vital Signs Project 
+Version: 0.1
+Authors@R: person("Thomas", "Johnson", email = "thomascjohnson@gmail.com",
+                  role = c("aut", "cre"))
+Description: A package that interfaces Google Drive and other services to
+            provide data and more to operators in the Vital Signs project.
+Depends: R (>= 3.1.0)
+License: Apache
+LazyData: true
+Imports:
+    httr,
+    R6,
+    plyr,
+    jsonlite,
+    foreign,
+    raster,
+    rgdal
+SystemRequirements: The user will need to have AWS CLI installed. This can be found at https://aws.amazon.com/cli/ for Windows, Mac and Linux.
