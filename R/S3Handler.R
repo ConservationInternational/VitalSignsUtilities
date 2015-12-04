@@ -194,7 +194,7 @@ private = list())
 newS3 <- function(access_key_id,
                   secret_access_key,
                   credentials_file,
-                  profile_name) {
+                  profile_name = "default") {
   return(S3Handler$new(access_key_id,
                        secret_access_key,
                        credentials_file,
