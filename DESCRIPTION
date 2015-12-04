@@ -16,3 +16,4 @@ Imports:
     foreign,
     raster,
     rgdal
+SystemRequirements: The user will need to have AWS CLI installed. This can be found at https://aws.amazon.com/cli/ for Windows, Mac and Linux.
