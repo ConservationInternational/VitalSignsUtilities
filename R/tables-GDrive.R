@@ -56,7 +56,7 @@
 #'
 #' # vstables <- vital_signs_tables(client_id = "blablabla",
 #' #                                client_secret = "blublublu")
-vital_signs_tables <- function(client_id, client_secret, creds_file,  scopes, service = F) {
+vital_signs_tables <- function(client_id, client_secret, creds_file,  scopes, service = F, cache = F) {
 if ((missing(client_id) || missing(client_secret))) {
   auth_type <- -1
   if (missing(creds_file)) {
@@ -78,20 +78,20 @@ if ((missing(client_id) || missing(client_secret))) {
     credentials <- jsonlite::fromJSON(txt=creds_file)
   }
   if ((!missing(creds_file) || auth_type == 1) & (!service))
-    return(VitalSignsData$new(credentials$web$client_id, credentials$web$client_secret))
+    return(VitalSignsData$new(credentials$web$client_id, credentials$web$client_secret, cache = cache))
   else if (service & !missing(creds_file))
-    return(VitalSignsData$new(service_credentials = credentials))
+    return(VitalSignsData$new(service_credentials = credentials, cache = cache))
   else if (auth_type == 2) {
     message("Please supply your")
     client_id <- readline("client ID: ")
     client_secret <- readline("client secret: ")
-    return(VitalSignsData$new(client_id, client_secret))
+    return(VitalSignsData$new(client_id, client_secret, cache = cache))
   }
 }
 else if (missing(scopes))
-  return(VitalSignsData$new(client_id, client_secret))
+  return(VitalSignsData$new(client_id, client_secret, cache = cache))
 else
-  return(VitalSignsData$new(client_id, client_secret, scopes))
+  return(VitalSignsData$new(client_id, client_secret, scopes, cache = cache))
 }
 
 #' Class used to warehouse tables. Uses VitalSignsTable to handle tables.
@@ -126,6 +126,7 @@ else
 VitalSignsData <- R6::R6Class("VitalSignsData",
  public = list(
    token = NULL,
+   drive_root = NULL,
    tables = list(),
    output.tables = list(),
    initialize = function(client_id,
@@ -139,7 +140,22 @@ VitalSignsData <- R6::R6Class("VitalSignsData",
                                       "drive.appdata",
                                       "drive.apps.readonly",
                                       "drive.metadata")),
-                         service_credentials) {
+                         service_credentials,
+                         cache) {
+     if (missing(service_credentials) & missing(client_id) &
+         missing(client_secret) & missing(auth_scopes) &
+         missing(cache) &
+         file.exists("~/.VitalSignsUtilities/configuration.json")) {
+       config <- jsonlite::fromJSON("~/.VitalSignsUtilities/configuration.json")
+       if (config$credentials$type == "service_account")
+         service_credentials <- config$credentials
+       else {
+         client_id <- config$credentials$client_id
+         client_secret <- config$credentials$client_secret
+       }
+       self$drive_root <- config$drive_root 
+     }
+     
      if (!missing(service_credentials)) {
        print(service_credentials)
        self$token <- httr::oauth_service_token(httr::oauth_endpoints("google"),
@@ -150,6 +166,27 @@ VitalSignsData <- R6::R6Class("VitalSignsData",
        self$token <- httr::oauth2.0_token(httr::oauth_endpoints("google"),
                                           gapp,
                                           auth_scopes)
+     }
+     
+     if (cache & !is.null(self$token)) {
+       tryCatch(expr = {setwd("~/.VitalSignsUtilities")},
+                error = function(e) {
+                          message(e)
+                          dir.create("~/.VitalSignsUtilities/")
+                        },
+                finally = {setwd("~/.VitalSignsUtilities")})
+       config <- list()
+       if (is.null(self$token$secrets)) {
+         config$credentials <- list("client_id" = self$token$app$key,
+                                    "client_secret" = self$token$app$secret,
+                                    "type" = "client")
+       } else {
+         config$credentials <- self$token$secrets
+       }
+       config$drive_root <- "~/.VitalSignsUtilities/drive_files/"
+       config$github_root <- "~/.VitalSignsUtilities/sources/"
+       self$drive_root <- config$drive_root
+       writeLines(jsonlite::toJSON(config), "~/.VitalSignsUtilities/configuration.json")
      }
     
    },
@@ -163,7 +200,11 @@ VitalSignsData <- R6::R6Class("VitalSignsData",
      tables <- sapply(datatables$items,
                          function(X) {
                            X$table_type <- tableType
-                           tableOut <- list(VitalSignsTable$new(X, self$token))
+                           tableOut <- list(VitalSignsTable$new(X,
+                                                                self$token,
+                                                                cache = TRUE,
+                                                                config_root =
+                                                                  self$drive_root))
                            print(X$title)
                            names(tableOut) <- X$title
                            return(tableOut)
@@ -240,7 +281,10 @@ VitalSignsData <- R6::R6Class("VitalSignsData",
      tableSave.temp <- plyr::llply(items,
                            function(item) {
                              item$table_type <- tableType
-                             return(VitalSignsTable$new(item, self$token))
+                             return(VitalSignsTable$new(item, self$token,
+                                                        cache = TRUE,
+                                                        config_root =
+                                                          self$drive_root))
                            })
      names(tableSave.temp) <- tableNames
      return(append(tableSave, tableSave.temp))
@@ -357,46 +401,61 @@ VitalSignsTable <- R6::R6Class("VitalSignsTable",
     auth_token = NULL,
     mimeType = NULL,
     parents = NULL,
-    initialize = function(item, auth_token) {
+    md5sum = NULL,
+    path = NULL,
+    initialize = function(item, auth_token, cache, config_root) {
       self$auth_token <- auth_token
       self$table_type <- item$table_type
       self$id <- item$id
       self$title <- item$title
-      self$mimeType = item$mimeType
-      self$parents = sapply(item$parents, function(X) return(X$id))
+      self$mimeType <- item$mimeType
+      self$parents <- sapply(item$parents, function(X) return(X$id))
       self$downloadurl <- item$downloadUrl
+      self$md5sum <- item$md5Checksum
+      self$path <- file.path(config_root, self$title)
+      private$cache <- cache
       if (self$mimeType == "application/vnd.google-apps.spreadsheet")
         self$downloadurl <- item$exportLinks$`text/csv`
     },
-    getData = function(returnData = FALSE, raw = FALSE) {
-      print(self$auth_token)
+    getData = function(force = FALSE) {
+      if (!self$auth_token$validate())
+        self$auth_token$refresh()
+
+      
+      if (file.exists(self$path) & !force) {
+        md5checksum <- tools::md5sum(self$path)
+        if (as.logical(is.na(md5checksum))) {
+          message("Couldn't compute md5 checksum.")
+        } else if (md5checksum == self$md5sum) {
+          message("Using most recent version of file!")
+        } else {
+          message("md5 checksum does not match: ", md5checksum, "\n")
+          message("The file version may be outdated.", 
+                  "Set force to TRUE to override.")
+        }
+        return(self$path)
+      }
+      
       self$table <- httr::content(httr::GET(self$downloadurl,
-                                  query = list(access_token = self$auth_token$credentials$access_token)))
-      if (self$mimeType == "text/plain" & !raw) {
-        vstf <- tempfile()
-        writeLines(self$table, vstf)
-        self$table <- read.table(vstf, header = T, sep = "\t")
+                                  query = list(access_token = self$auth_token$credentials$access_token),
+                                  httr::progress()),
+                                  type = "raw")
+      
+      vstf <- tempfile()
+      writeBin(self$table, vstf)
+      
+      if (private$cache) {
+        if (!dir.exists(dirname(self$path)))
+          dir.create(dirname(self$path), recursive = TRUE)
+        file.rename(from = vstf, to = self$path)
       }
-      else if (self$mimeType == "application/octet-stream" &
-          substr(self$title,
-                 nchar(self$title) - 2,
-                 nchar(self$title)) == "dta" & !raw) {
-        vstf <- tempfile()
-        writeBin(self$table, vstf)
-        self$table <- foreign::read.dta(vstf)
-      }
-      else if (self$mimeType == "image/tiff" & !raw) {
-        vstf <- tempfile(fileext = ".tif")
-        writeBin(self$table, vstf)
-        self$table <- raster::raster(vstf)
-      }
-      if (returnData == TRUE)
-        return(self$table)
-      else
-        return(str(self$table))
+
+      return(self$path)
   }),
   private = list(
     "IndicatorOutput" =
-      "0B_xWBYveFIdUfkd1UGk2R2pIWHpBSlhjM1Z6STI5MTh5VGxyUU5oUWtRWlhqeWd5N2V4b3M"
+      "0B_xWBYveFIdUfkd1UGk2R2pIWHpBSlhjM1Z6STI5MTh5VGxyUU5oUWtRWlhqeWd5N2V4b3M",
+    cache = FALSE
   )
 )
+
