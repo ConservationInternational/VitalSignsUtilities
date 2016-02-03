@@ -20,11 +20,11 @@ CIRepo <- R6::R6Class("CIRepo",
   public = list(
     github_token = NULL,
     
-    initialize = function(pat) {
+    initialize = function(pat, repo = "vs-indicators-calc-private") {
       self$github_token <- pat
     },
     sourceRCode = function(repo_path) {
-      github_url <- paste0(private$RCode.url, repo_path)
+      github_url <- paste0(gsub("REPO", repo, private$RCode.url), repo_path)
       print(github_url)
       github_response <- httr::GET(github_url,
                                    httr::add_headers("Authorization" =
@@ -40,7 +40,7 @@ CIRepo <- R6::R6Class("CIRepo",
       }
     },
     parseRCode = function(repo_path) {
-      github_url <- paste0(private$RCode.url, repo_path)
+      github_url <- paste0(gsub("REPO", repo, private$RCode.url), repo_path)
       print(github_url)
       github_response <- httr::GET(github_url,
                                    httr::add_headers("Authorization" =
@@ -57,7 +57,7 @@ CIRepo <- R6::R6Class("CIRepo",
     }
   ),
   private = list(
-    RCode.url = "https://raw.githubusercontent.com/ConservationInternational/Rcode/master/"
+    RCode.url = "https://raw.githubusercontent.com/ConservationInternational/REPO/master/"
   )
 )
 
