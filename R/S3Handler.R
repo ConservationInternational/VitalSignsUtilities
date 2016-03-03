@@ -38,12 +38,15 @@
 S3Handler <- R6::R6Class("S3Handler",
                          public = list(
                            aws_creds_file = "~/.aws/credentials",
+                           data_dir = "~/.VitalSignsUtilities/data_files/",
                            profile_name = NULL,
                            dirlist_s3 = list(),
                            initialize = function(access_key_id,
                                                  secret_access_key,
                                                  credentials_file,
-                                                 profile_name) {
+                                                 profile_name,
+                                                 data_dir = NULL) {
+                             if (!is.null(data_dir)) self$data_dir <- data_dir
                              self$writeCredentials(access_key_id,
                                                    secret_access_key,
                                                    credentials_file,
@@ -119,20 +122,19 @@ S3Handler <- R6::R6Class("S3Handler",
                                stop(paste0("Write path already exists ",
                                            "and overwrite = FALSE"))
 
-                             system(sprintf("aws s3 cp %s s3://%s --profile %s",
+                             system2("aws", sprintf("s3 cp %s s3://%s --profile %s",
                                             source_path,
                                             file.path(bucket, target_path),
                                             self$profile_name),
-                                    intern = T) -> s3_write_results
+                                     stdout = TRUE, stderr = TRUE) -> s3_write_results
                              message(s3_write_results)
                            },
                            listS3 = function(bucket, path = "") {
                              s3_path <- file.path(bucket, path)
-                             system(sprintf(
-                               "aws s3 ls %s --recursive --profile %s",
+                             system2("aws", sprintf("s3 ls %s --recursive --profile %s",
                                             s3_path,
                                             self$profile_name),
-                                    intern = T) -> s3_listing
+                                     stdout = TRUE, stderr = TRUE) -> s3_listing
                              self$dirlist_s3[[bucket]] <- sapply(s3_listing,
                                                             function(path) {
                                folder_regex <- "\\s+PRE\\s"
@@ -158,6 +160,94 @@ S3Handler <- R6::R6Class("S3Handler",
                                return(TRUE)
                              else
                                return(FALSE)
+                           },
+                           sync = function(src_files, destination = ".", dryrun=NULL, include=NULL, exclude=NULL, 
+                                             acl=NULL, no.follow.symlinks=NULL, no.guess.mime.type=NULL, sse=NULL, 
+                                             sse.c=NULL, sse.c.key=NULL, sse.kms.key.id=NULL, sse.c.copy.source=NULL, 
+                                             sse.c.copy.source.key=NULL, storage.class=NULL, grants=NULL, website.redirect=NULL, 
+                                             content.type=NULL, cache.control=NULL, content.disposition=NULL, content.encoding=NULL, 
+                                             content.language=NULL, expires=NULL, source.region=NULL, only.show.errors=NULL, 
+                                             page.size=NULL, ignore.glacier.warnings=NULL, metadata=NULL, metadata.directive=NULL, 
+                                             size.only=NULL, exact.timestamps=NULL, delete=NULL) {
+
+                             # arguments as documented in s3 CLI documentation: http://docs.aws.amazon.com/cli/latest/reference/s3/sync.html
+                             setwd(self$data_dir)
+                             print(include)
+                             args <- c("s3", "sync", src_files, destination,
+                                       ifelse (!is.null(dryrun),	"--dryrun", ""),
+                                       ifelse (!is.null(exclude), paste0("--exclude \"", exclude, "\""), ""),
+                                       ifelse (!is.null(include), paste0("--include \"", include, "\""), ""),
+                                       ifelse (!is.null(acl), c("--acl", acl), ""),
+                                       ifelse (!is.null(no.follow.symlinks), "--no-follow-symlinks", ""), # default behavior is to follow
+                                       ifelse (!is.null(no.guess.mime.type), "--no-guess-mime-type", ""),
+                                       ifelse (!is.null(sse), c("--sse", sse), ""),
+                                       ifelse (!is.null(sse.c), c("--sse-c", sse.c), ""),
+                                       ifelse (!is.null(sse.c.key), c("--sse-c-key", sse.c.key), ""),
+                                       ifelse (!is.null(sse.kms.key.id),	c("--sse-kms-key-id", sse.kms.key.id), ""),
+                                       ifelse (!is.null(sse.c.copy.source), c("--sse-c-copy-source", sse.c.copy.source), ""),
+                                       ifelse (!is.null(storage.class), c("--storage-class", storage.class), ""),
+                                       ifelse (!is.null(grants),	c("--grants", grants), ""),
+                                       ifelse (!is.null(website.redirect),	c("--website-redirect", website.redirect), ""),
+                                       ifelse (!is.null(content.type),	c("--content-type", content.type), ""),
+                                       ifelse (!is.null(cache.control), c("--cache-control", cache.control), ""),
+                                       ifelse (!is.null(content.disposition), c("--content-disposition", content.disposition), ""),
+                                       ifelse (!is.null(content.encoding),	c("--content-encoding", content.encoding), ""),
+                                       ifelse (!is.null(content.language),	c("--content-language", content.language), ""),
+                                       ifelse (!is.null(expires), c("--expires", expires), ""),
+                                       ifelse (!is.null(source.region), c("--source-region", source.region), ""),
+                                       ifelse (!is.null(only.show.errors),	c("--only-show-errors"), ""),
+                                       ifelse (!is.null(page.size), c("--page-size", page.size), ""),
+                                       ifelse (!is.null(ignore.glacier.warnings), "--ignore-glacier-warnings", ""),
+                                       ifelse (!is.null(metadata), c("--metadata", metadata), ""),
+                                       ifelse (!is.null(metadata.directive),	c("--metadata-directive", metadata.directive), ""),
+                                       ifelse (!is.null(size.only), "--size-only", ""),
+                                       ifelse (!is.null(exact.timestamps), "--exact-timestamps", ""),
+                                       ifelse (!is.null(delete), "--delete", "")				
+                             )
+
+                             commonFilePath <- function (path1, path2) {
+                               
+                               path_chunks <- strsplit(c(path1, path2), "/")
+                               reversed_path_chunks <- lapply(path_chunks, rev)
+                               
+                               i <- 1
+                               repeat({
+                                 current_chunk <- sapply(reversed_path_chunks, function(x) x[i])
+                                 if(any(current_chunk != current_chunk[1])) break
+                                 i <- i + 1
+                               })
+                               
+                               longest_common <- paste(rev(reversed_path_chunks[[1]][seq_len(i-1)]), collapse="/")
+                               return(longest_common)
+                               
+                             }
+                             
+                             # NOTE: s3 cli output is ALWAYS text - no json to be found unfortunately
+                             # use system2 to enable getting exit status to detect errors
+                             sync_output <- system2("aws", args, stdout=TRUE, stderr=TRUE)
+                             
+                             # if system2 has attributes (this will be sync_output$status if it exists), an error has occurred
+                             if (!is.null(attributes(sync_output))) stop(paste("S3 CLI exited with error: ", sync_output))
+                             
+                             if (!is.null(debug)) print(sync_output)
+                             
+                             changed_files <- sapply(sync_output, function(output_line) {
+                               sync_output_words <- strsplit(output_line, " ")[[1]]
+                               file_indices <- match("to", sync_output_words)
+                               commonFilePath(sync_output_words[file_indices-1], sync_output_words[file_indices+1])
+                             }, USE.NAMES=FALSE)
+                             
+                             return(ifelse(length(changed_files)==0, "Files already up to date!", changed_files))
+                             
+                           },
+                           syncAll = function(s3_bucket,
+                                              s3_dir = "",
+                                              source_dir = self$data_dir) {
+                             self$sync(file.path(s3_bucket, s3_dir), source_dir)
+                           },
+                           syncS3 = function(s3bucket, sync_file) {
+                             setwd(self$data_dir)
+                             self$sync(s3bucket, exclude = "*", include = sync_file)
                            }
 ),
 private = list())
@@ -194,9 +284,11 @@ private = list())
 newS3 <- function(access_key_id,
                   secret_access_key,
                   credentials_file,
-                  profile_name = "default") {
+                  profile_name = "default",
+                  data_dir) {
   return(S3Handler$new(access_key_id,
                        secret_access_key,
                        credentials_file,
-                       profile_name))
+                       profile_name,
+                       data_dir))
 }

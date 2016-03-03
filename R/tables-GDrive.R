@@ -183,7 +183,7 @@ VitalSignsData <- R6::R6Class("VitalSignsData",
        } else {
          config$credentials <- self$token$secrets
        }
-       config$drive_root <- "~/.VitalSignsUtilities/drive_files/"
+       config$drive_root <- "~/.VitalSignsUtilities/data_files/"
        config$github_root <- "~/.VitalSignsUtilities/sources/"
        self$drive_root <- config$drive_root
        writeLines(jsonlite::toJSON(config), "~/.VitalSignsUtilities/configuration.json")
