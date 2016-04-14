@@ -27,6 +27,40 @@
 #'  \item \code{checkFilesS3(bucket, path):
 #'    Given a bucket and path, the user can use this method to check whether a
 #'    file already exists in the S3 bucket.}
+#'  \item \code{sync(src_files, destination, ...):
+#'    Utility function that is wrapped by syncAll and syncS3. Provided a
+#'    combination of a local file and a file on an s3 bucket, it syncs them.
+#'    The first file or path is copied/synced to the second file/path.
+#'    
+#'    Technically this could be used for file upload too. Example:
+#'    
+#'    s3 <- newS3()
+#'    # Syncing to a bucket, individual files:
+#'    s3$sync("s3://some-bucket", exclude = "*", include = "some-csv.csv")
+#'    
+#'    s3$sync("s3://some-bucket", exclude = "*", include = "some-png.png")
+#'    
+#'    # Syncing one file from a bucket:
+#'    s3$sync("s3://some-bucket", "~/Documents/", exclude = "*", include = "some-png.png")
+#'    
+#'    #Syncing directories:
+#'    s3$sync("s3://some-bucket", "~/.VitalSignsUtilities/data_files/")
+#'    s3$sync("~/.VitalSignsUtilities/data_files/subdir/", "s3://some-bucket/subdir/")
+#'  \item \code{syncAll(s3_bucket, s3_dir, source_dir):
+#'    Wrapper for sync - works such that provided two paths, it syncs the files
+#'    in them.
+#'    
+#'    s3 <- newS3()
+#'    
+#'    s3$sincAll("s3://some-bucket", "some-dir") # Already in the directory we want to sync
+#'    s3$sincAll("s3://some-bucket", "some-dir", "/usr/home/s3-bucket/some-bucket/some-dir") # Already in the directory we want to sync
+#'  \item \code{syncS3(s3_bucket, sync_file):
+#'    Wrapper for sync - syncs individual files. Example:
+#'    
+#'    s3 <- newS3()
+#'    
+#'    s3$syncS3(s3bucket = "s3://some-bucket", sync_file = "eqs.png")
+#'    }
 #' }
 #'
 #' @docType class
@@ -46,6 +80,7 @@ S3Handler <- R6::R6Class("S3Handler",
                                                  credentials_file,
                                                  profile_name,
                                                  data_dir = NULL) {
+                             self$data_dir <- "~/.VitalSignsUtilities/data_files/"
                              if (!is.null(data_dir)) self$data_dir <- data_dir
                              self$writeCredentials(access_key_id,
                                                    secret_access_key,
@@ -285,7 +320,7 @@ newS3 <- function(access_key_id,
                   secret_access_key,
                   credentials_file,
                   profile_name = "default",
-                  data_dir) {
+                  data_dir = NULL) {
   return(S3Handler$new(access_key_id,
                        secret_access_key,
                        credentials_file,
